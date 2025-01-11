@@ -2,7 +2,7 @@
 
 A web application that generates 3D models from text descriptions using Meshy.ai API.
 
-![alt text](<WhatsApp Image 2025-01-11 at 13.59.46_8e2bf055.jpg>)
+![alt text](<oct.jpg>)
 
 ## Prerequisites
 
