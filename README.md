@@ -1,5 +1,7 @@
 # Text to 3D Model Generator
 
+Live Demo URL: https://calluxpore.github.io/Text-to-3D-Model-Generator/
+
 A web application that generates 3D models from text descriptions using Meshy.ai API.
 
 ![alt text](<oct.jpg>)
