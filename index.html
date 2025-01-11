@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text to 3D Model Generator</title>
+    <!-- Use model-viewer which is specifically designed for GLB files -->
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            height: 80vh;
+        }
+        .input-section {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .viewer-section {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        model-viewer {
+            width: 100%;
+            height: 400px;
+            background: #f8f8f8;
+            border-radius: 8px;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            resize: vertical;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        .progress-bar {
+            width: 200px;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .progress {
+            width: 0%;
+            height: 100%;
+            background-color: #4CAF50;
+            transition: width 0.3s ease;
+        }
+        #downloadInfo {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-radius: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="input-section">
+            <h2>Text to 3D Model</h2>
+            <div style="margin-bottom: 20px;">
+                <label for="apiKey" style="display: block; margin-bottom: 5px;">Meshy API Key:</label>
+                <input type="password" id="apiKey" placeholder="Enter your Meshy API key" 
+                    style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <textarea id="prompt" placeholder="Describe the 3D model you want to generate..."></textarea>
+            <div>
+                <button id="generateBtn" onclick="generate3DModel()">Generate Model</button>
+                <button id="downloadBtn" onclick="downloadFiles()" style="display: none;">Download Files</button>
+            </div>
+            <div id="status" class="status"></div>
+            <div id="downloadInfo"></div>
+        </div>
+        <div class="viewer-section">
+            <model-viewer id="modelViewer" 
+                camera-controls 
+                auto-rotate 
+                shadow-intensity="1"
+                exposure="0.75"
+                style="display: none;">
+            </model-viewer>
+            <div id="loading">
+                <p>Generating 3D Model...</p>
+                <div class="progress-bar">
+                    <div id="progressBar" class="progress"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let modelUrls = null;
+        let currentPrompt = '';
+        const LOCAL_PROXY = 'http://localhost:3000/proxy-model?url=';
+
+        async function getApiKey() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            if (!apiKey) {
+                alert('Please enter your Meshy API key');
+                return null;
+            }
+            return apiKey;
+        }
+
+        async function downloadFiles() {
+            const apiKey = await getApiKey();
+            if (!apiKey) return;
+
+            if (!modelUrls) {
+                alert('No model files available to download');
+                return;
+            }
+
+            const status = document.getElementById('status');
+            const downloadInfo = document.getElementById('downloadInfo');
+            status.textContent = 'Downloading GLB file...';
+
+            try {
+                // Download only GLB file
+                if (modelUrls.glb) {
+                    const proxyUrl = LOCAL_PROXY + encodeURIComponent(modelUrls.glb);
+                    const response = await fetch(proxyUrl, {
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const blob = await response.blob();
+                    // Get first two words from the current prompt
+                    const words = currentPrompt.split(' ').slice(0, 2).join('_');
+                    const filename = `${words}.glb`;
+                    
+                    // Create download link
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(downloadUrl);
+                    
+                    // Show download info
+                    downloadInfo.innerHTML = `
+                        <p>File downloaded: ${filename}</p>
+                        <p>Check your downloads folder!</p>
+                    `;
+                    downloadInfo.style.display = 'block';
+                }
+
+                status.textContent = 'GLB file downloaded successfully!';
+            } catch (error) {
+                console.error('Error downloading file:', error);
+                status.textContent = 'Error downloading file. Check console for details.';
+            }
+        }
+
+        async function generate3DModel() {
+            const apiKey = await getApiKey();
+            if (!apiKey) return;
+
+            const prompt = document.getElementById('prompt').value.trim();
+            if (!prompt) {
+                alert('Please enter a prompt');
+                return;
+            }
+
+            currentPrompt = prompt;
+
+            // Save prompt to file
+            try {
+                await fetch('http://localhost:3000/save-prompt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ prompt })
+                });
+            } catch (error) {
+                console.error('Error saving prompt:', error);
+            }
+
+            const generateBtn = document.getElementById('generateBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const status = document.getElementById('status');
+            const loading = document.getElementById('loading');
+            const progressBar = document.getElementById('progressBar');
+            const modelViewer = document.getElementById('modelViewer');
+            const downloadInfo = document.getElementById('downloadInfo');
+
+            generateBtn.disabled = true;
+            downloadBtn.style.display = 'none';
+            loading.style.display = 'block';
+            modelViewer.style.display = 'none';
+            downloadInfo.style.display = 'none';
+            status.textContent = 'Creating preview task...';
+
+            try {
+                // Create preview task
+                const previewResponse = await fetch('https://api.meshy.ai/openapi/v2/text-to-3d', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        mode: 'preview',
+                        prompt: prompt,
+                        art_style: 'realistic',
+                        ai_model: 'meshy-4',
+                        topology: 'triangle'
+                    })
+                });
+
+                if (!previewResponse.ok) {
+                    throw new Error('Failed to create preview task');
+                }
+
+                const previewData = await previewResponse.json();
+                const previewTaskId = previewData.result;
+
+                // Poll preview task status
+                let previewStatus;
+                do {
+                    const statusResponse = await fetch(`https://api.meshy.ai/openapi/v2/text-to-3d/${previewTaskId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`
+                        }
+                    });
+                    const statusData = await statusResponse.json();
+                    previewStatus = statusData.status;
+                    progressBar.style.width = `${statusData.progress || 0}%`;
+                    status.textContent = `Preview progress: ${statusData.progress || 0}%`;
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } while (previewStatus === 'PENDING' || previewStatus === 'IN_PROGRESS');
+
+                if (previewStatus !== 'SUCCEEDED') {
+                    throw new Error('Preview task failed');
+                }
+
+                status.textContent = 'Creating refine task...';
+
+                // Create refine task
+                const refineResponse = await fetch('https://api.meshy.ai/openapi/v2/text-to-3d', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        mode: 'refine',
+                        preview_task_id: previewTaskId,
+                        enable_pbr: true
+                    })
+                });
+
+                if (!refineResponse.ok) {
+                    throw new Error('Failed to create refine task');
+                }
+
+                const refineData = await refineResponse.json();
+                const refineTaskId = refineData.result;
+
+                // Poll refine task status
+                let refineStatus;
+                do {
+                    const statusResponse = await fetch(`https://api.meshy.ai/openapi/v2/text-to-3d/${refineTaskId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`
+                        }
+                    });
+                    const statusData = await statusResponse.json();
+                    refineStatus = statusData.status;
+                    progressBar.style.width = `${statusData.progress || 0}%`;
+                    status.textContent = `Refine progress: ${statusData.progress || 0}%`;
+
+                    if (statusData.model_urls?.glb) {
+                        modelUrls = statusData.model_urls;
+                        downloadBtn.style.display = 'inline-block';
+                        
+                        // Display model in viewer using local proxy
+                        const proxyUrl = LOCAL_PROXY + encodeURIComponent(statusData.model_urls.glb);
+                        modelViewer.src = proxyUrl;
+                        modelViewer.style.display = 'block';
+                        loading.style.display = 'none';
+
+                        // Add crossorigin attribute
+                        modelViewer.setAttribute('crossorigin', 'anonymous');
+                        
+                        // Add load event listener
+                        modelViewer.addEventListener('load', () => {
+                            console.log('Model loaded successfully');
+                        });
+                        
+                        // Add error event listener
+                        modelViewer.addEventListener('error', (error) => {
+                            console.error('Error loading model:', error);
+                            status.textContent = 'Error loading model in viewer. Try downloading instead.';
+                        });
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } while (refineStatus === 'PENDING' || refineStatus === 'IN_PROGRESS');
+
+                if (refineStatus !== 'SUCCEEDED') {
+                    throw new Error('Refine task failed');
+                }
+
+                status.textContent = 'Model generated successfully! Click Download Files to save.';
+                status.style.color = 'green';
+            } catch (error) {
+                console.error('Error:', error);
+                status.textContent = `Error: ${error.message}`;
+                status.style.color = 'red';
+            } finally {
+                generateBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
